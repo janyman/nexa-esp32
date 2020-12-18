@@ -1,0 +1,29 @@
+@startuml
+
+
+WaitBitStart #Red--> WaitBitHiLo: low-to-high transition; Save timestampLoHi
+WaitBitHiLo --> WaitBitLoDecision: high-to-low transition when (now - timestampLoHi) is around 1T; save timestampHiLo
+WaitBitHiLo --> PhysicalBitError: high-to-low transition when (now - timestampLoHi) is NOT within limits
+WaitBitLoDecision --> MarkConditionDetected: low-to-high transition; when (now - timestampHiLo) is around 1T
+MarkConditionDetected --> WaitBitStart: immediate transition
+WaitBitLoDecision --> SpaceConditionDetected: low-to-high transition; low-to-high transition; when (now - timestampHiLo) is around 5T
+SpaceConditionDetected --> WaitBitStart: immediate transition
+WaitBitLoDecision --> SyncConditionDetected: low-to-high transition; when (now - timestampHiLo) is 10T
+SyncConditionDetected --> WaitBitStart: immediate transition
+WaitBitLoDecision --> PauseConditionDetected: low-to-high transition; when (now - timestampHiLo) is around 40T
+PauseConditionDetected --> WaitBitStart
+WaitBitLoDecision --> PhysicalBitError: low-to-high transition; when (now - timestampHiLo was none of 1T, 5T, 10T or 40T)
+PhysicalBitError --> WaitBitStart: implicit transition, reset the protocol state machine to WaitSyncCondition
+
+
+WaitSyncCondition #Red --> WaitLogicalBitStart: sync is detected, signal start of telegram
+WaitLogicalBitStart --> WaitSpaceCondition: mark is detected
+WaitSpaceCondition --> WaitLogicalBitStart: space is detected, LOGICAL ONE BIT is read
+WaitSpaceCondition --> ProtocolError: if some other kind of bit condition is detected (mark, pause, sync)
+WaitLogicalBitStart --> WaitMarkCondition: space is detected
+WaitMarkCondition --> WaitLogicalBitStart: mark is detected, LOGICAL ZERO BIT is read
+WaitMarkCondition --> ProtocolError: if some other kind of bit condition is detected (space, pause, sync)
+WaitLogicalBitStart --> WaitSyncCondition: pause is detected, signal end of telegram
+WaitLogicalBitStart --> ProtocolError: sync is detected, signal bad telegram
+
+@enduml
