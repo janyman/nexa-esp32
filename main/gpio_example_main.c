@@ -14,6 +14,8 @@
 #include "freertos/queue.h"
 #include "driver/gpio.h"
 
+#include "esp_timer.h"
+
 /**
  * Brief:
  * This test code shows how to configure gpio and how to use gpio interrupt.
@@ -31,12 +33,11 @@
  *
  */
 
-#define GPIO_OUTPUT_IO_0    18
-#define GPIO_OUTPUT_IO_1    19
-#define GPIO_OUTPUT_PIN_SEL  ((1ULL<<GPIO_OUTPUT_IO_0) | (1ULL<<GPIO_OUTPUT_IO_1))
-#define GPIO_INPUT_IO_0     4
-#define GPIO_INPUT_IO_1     5
-#define GPIO_INPUT_PIN_SEL  ((1ULL<<GPIO_INPUT_IO_0) | (1ULL<<GPIO_INPUT_IO_1))
+#define GPIO_OUTPUT_IO_0    5 //UEXT pin 10
+#define GPIO_OUTPUT_IO_1    2 //UEXT pin 8
+#define GPIO_OUTPUT_PIN_SEL  ( (1ULL<<GPIO_OUTPUT_IO_0) | (1ULL <<GPIO_OUTPUT_IO_1) )
+#define GPIO_INPUT_IO_0     14 //UEXT pin 9
+#define GPIO_INPUT_PIN_SEL  ( 1ULL<<GPIO_INPUT_IO_0 )
 #define ESP_INTR_FLAG_DEFAULT 0
 
 static xQueueHandle gpio_evt_queue = NULL;
@@ -55,6 +56,16 @@ static void gpio_task_example(void* arg)
             printf("GPIO[%d] intr, val: %d\n", io_num, gpio_get_level(io_num));
         }
     }
+}
+
+static void gpio_set(bool state) {
+    gpio_set_level(GPIO_OUTPUT_IO_0, state);
+    gpio_set_level(GPIO_OUTPUT_IO_1, state);
+}
+
+static void busy_wait(int usec) {
+    int64_t timestamp = esp_timer_get_time();
+    while (esp_timer_get_time() - timestamp < usec);
 }
 
 void app_main()
@@ -95,20 +106,46 @@ void app_main()
     gpio_install_isr_service(ESP_INTR_FLAG_DEFAULT);
     //hook isr handler for specific gpio pin
     gpio_isr_handler_add(GPIO_INPUT_IO_0, gpio_isr_handler, (void*) GPIO_INPUT_IO_0);
-    //hook isr handler for specific gpio pin
-    gpio_isr_handler_add(GPIO_INPUT_IO_1, gpio_isr_handler, (void*) GPIO_INPUT_IO_1);
 
     //remove isr handler for gpio number.
-    gpio_isr_handler_remove(GPIO_INPUT_IO_0);
-    //hook isr handler for specific gpio pin again
-    gpio_isr_handler_add(GPIO_INPUT_IO_0, gpio_isr_handler, (void*) GPIO_INPUT_IO_0);
+    //gpio_isr_handler_remove(GPIO_INPUT_IO_0);
 
     int cnt = 0;
     while(1) {
         printf("cnt: %d\n", cnt++);
-        vTaskDelay(1000 / portTICK_RATE_MS);
-        gpio_set_level(GPIO_OUTPUT_IO_0, cnt % 2);
-        gpio_set_level(GPIO_OUTPUT_IO_1, cnt % 2);
+
+        //SYNC
+        gpio_set(1);
+        busy_wait(250);
+        gpio_set(0);
+        busy_wait(2500);
+        
+        // "1" bit
+        gpio_set(1);
+        busy_wait(250);
+        gpio_set(0);
+        busy_wait(250);
+
+        // "0" bit
+        gpio_set(1);
+        busy_wait(250);
+        gpio_set(0);
+        busy_wait(1250);
+
+        // "1" bit
+        gpio_set(1);
+        busy_wait(250);
+        gpio_set(0);
+        busy_wait(250);
+
+        //PAUSE
+        gpio_set(1);
+        busy_wait(250);
+        gpio_set(0);
+        busy_wait(10000);
+
+        vTaskDelay(500 / portTICK_RATE_MS);
+        
     }
 }
 
