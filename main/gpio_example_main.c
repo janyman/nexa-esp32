@@ -16,6 +16,8 @@
 
 #include "esp_timer.h"
 
+#include "nexa_receiver.h"
+
 /**
  * Brief:
  * This test code shows how to configure gpio and how to use gpio interrupt.
@@ -40,20 +42,135 @@
 #define GPIO_INPUT_PIN_SEL  ( 1ULL<<GPIO_INPUT_IO_0 )
 #define ESP_INTR_FLAG_DEFAULT 0
 
-static xQueueHandle gpio_evt_queue = NULL;
+static xQueueHandle radio_evt_queue = NULL;
+
+static enum nexa_bit_detector_state bit_detector_state = WaitBitStart;
+static int64_t bit_detector_timestampLoHi;
+static int64_t bit_detector_timestampHiLo;
+
+static bool IRAM_ATTR nexa_allowable_time(int64_t now, int64_t compare_timestamp, int64_t target) {
+    int64_t min = target - 25;
+    int64_t max = target + 25;
+
+    if ((now - compare_timestamp) < min) {
+        return false;
+    }
+    if ((now - compare_timestamp) > max) {
+        return false;
+    }
+    return true;
+}
+
+static const int T = 250;   // usec
 
 static void IRAM_ATTR gpio_isr_handler(void* arg)
 {
+    static bool prev_level;
+
     uint32_t gpio_num = (uint32_t) arg;
-    xQueueSendFromISR(gpio_evt_queue, &gpio_num, NULL);
+    
+
+    bool level = gpio_get_level(gpio_num);
+    int64_t now = esp_timer_get_time();
+    enum nexa_condition condition;
+
+    if (level && prev_level) {
+        return;
+    }
+
+    if (!level && !prev_level) {
+        return;
+    }
+
+    bool high_to_low, low_to_high;
+    if (!prev_level && level) {
+        low_to_high = true;
+    }
+    else {
+        low_to_high = false;
+    }
+
+    high_to_low = !low_to_high;
+
+    switch (bit_detector_state) {
+        case WaitBitStart:
+            if (low_to_high) {
+                /* low-to-high transition detected */
+                bit_detector_state = WaitBitHiLo;
+                bit_detector_timestampLoHi = now;
+            }
+            else {
+                condition = PhysicalBitErrorBadEdge1;
+                xQueueSendFromISR(radio_evt_queue, &condition, NULL);
+            }
+            break;
+        case WaitBitHiLo:
+            if (high_to_low) {
+                bit_detector_timestampHiLo = now;
+                if (nexa_allowable_time(now, bit_detector_timestampLoHi,T)) {
+                    bit_detector_state = WaitBitLoDecision;
+                }
+                else {
+                    /* Bit error */
+                    /* Signal physical bit error to anyone listening?? */
+                    condition = PhysicalBitErrorBadHighTime;
+                    xQueueSendFromISR(radio_evt_queue, &condition, NULL);
+                    bit_detector_state = WaitBitStart;
+                }
+            }
+            else {
+                condition = PhysicalBitErrorBadEdge2;
+                xQueueSendFromISR(radio_evt_queue, &condition, NULL);
+                bit_detector_state = WaitBitStart;
+            }
+            break;
+        case WaitBitLoDecision:
+            if (low_to_high) {
+                if (nexa_allowable_time(now, bit_detector_timestampHiLo, T)) {
+                    /* Signal physical "1" bit: MarkConditionDetected */
+                    condition = MarkConditionDetected;
+                    xQueueSendFromISR(radio_evt_queue, &condition, NULL);
+                }
+                else if (nexa_allowable_time(now, bit_detector_timestampHiLo, 5*T)) {
+                    /* Signal physical "0" bit: SpaceConditionDetected */
+                    condition = SpaceConditionDetected;
+                    xQueueSendFromISR(radio_evt_queue, &condition, NULL);
+                }
+                else if (nexa_allowable_time(now, bit_detector_timestampHiLo, 10*T)) {
+                    /* Signal sync condition detected */
+                    condition = SyncConditionDetected;
+                    xQueueSendFromISR(radio_evt_queue, &condition, NULL);
+                }
+                else if ((now - bit_detector_timestampHiLo) > (40*T-50)) {
+                    /* Signal pause conditions detected */
+                    condition = PauseConditionDetected;
+                    xQueueSendFromISR(radio_evt_queue, &condition, NULL);
+                }
+                else {
+                    condition = PhysicalBitErrorBadLowTime;
+                    xQueueSendFromISR(radio_evt_queue, &condition, NULL);
+                }
+            }
+            else {
+                condition = PhysicalBitErrorBadEdge3;
+                xQueueSendFromISR(radio_evt_queue, &condition, NULL);
+            }
+
+            
+            /* Any of these situations result in transition to start state */
+            bit_detector_timestampLoHi = now;
+            bit_detector_state = WaitBitHiLo;
+            break;
+    }
+    prev_level = level;
 }
 
 static void gpio_task_example(void* arg)
 {
-    uint32_t io_num;
+    enum nexa_condition condition;
     for(;;) {
-        if(xQueueReceive(gpio_evt_queue, &io_num, portMAX_DELAY)) {
-            printf("GPIO[%d] intr, val: %d\n", io_num, gpio_get_level(io_num));
+        if(xQueueReceive(radio_evt_queue, &condition, portMAX_DELAY)) {
+            printf("Nexa condition %i\n", condition);
         }
     }
 }
@@ -113,8 +230,6 @@ T = 250 us
 (10T = 2500 us)
 (40T = 10 ms)
 */
-
-static const int T = 250;   // usec
 
 static void transmit_sync(void) {
     //SYNC
@@ -195,9 +310,9 @@ void app_main()
     gpio_set_intr_type(GPIO_INPUT_IO_0, GPIO_INTR_ANYEDGE);
 
     //create a queue to handle gpio event from isr
-    gpio_evt_queue = xQueueCreate(10, sizeof(uint32_t));
-    //start gpio task
-    xTaskCreate(gpio_task_example, "gpio_task_example", 2048, NULL, 10, NULL);
+    radio_evt_queue = xQueueCreate(100, sizeof(enum nexa_condition));
+    //start gpio task. Note that this task should be set to *low priority* since GPIO ISR will post, and we cannot allow context switch to happen when isr should be serviced... 
+    xTaskCreate(gpio_task_example, "gpio_task_example", 2048, NULL, 0, NULL);
 
     //install gpio isr service
     gpio_install_isr_service(ESP_INTR_FLAG_DEFAULT);
@@ -211,6 +326,23 @@ void app_main()
     while(1) {
         printf("cnt: %d\n", cnt++);
 
+        /* Packetformat
+        Every packet consists of a sync bit followed by 26 + 2 + 4 (total 32 logical data part bits) and is ended by a pause bit.
+
+        S HHHH HHHH HHHH HHHH HHHH HHHH HHGO CCEE P
+
+        S = Sync bit.
+        H = The first 26 bits are transmitter unique codes, and it is this code that the reciever "learns" to recognize.
+        G = Group code. Set to 0 for on, 1 for off.
+        O = On/Off bit. Set to 0 for on, 1 for off.
+        C = Channel bits. Proove/Anslut = 00, Nexa = 11.
+        E = Unit bits. Device to be turned on or off.
+        Proove/Anslut Unit #1 = 00, #2 = 01, #3 = 10.
+        Nexa Unit #1 = 11, #2 = 10, #3 = 01.
+        P = Pause bit.
+
+        For every button press, N identical packets are sent. For Proove/Anslut N is six, and for Nexa it is five.
+        */
 
         /* 26 bit station id...
         2^25 (base 10) = 10000000000000000000000000 (base 2) = 0x2000000 (base 16) */
@@ -244,7 +376,7 @@ void app_main()
         
         transmit_pause();
 
-        vTaskDelay(5000 / portTICK_RATE_MS);
+        vTaskDelay(10000 / portTICK_RATE_MS);
         
     }
 }
