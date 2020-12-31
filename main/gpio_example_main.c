@@ -165,12 +165,81 @@ static void IRAM_ATTR gpio_isr_handler(void* arg)
     prev_level = level;
 }
 
+static enum nexa_telegram_detector_state decode_state = WaitSyncCondition;
+
+static void queue_skip_until_sync(void) {
+    enum nexa_condition condition;
+    while (xQueueReceive(radio_evt_queue, &condition, portMAX_DELAY)) {
+        if (condition == SyncConditionDetected) {
+            break;
+        }
+    }
+}
+
 static void gpio_task_example(void* arg)
 {
     enum nexa_condition condition;
     for(;;) {
         if(xQueueReceive(radio_evt_queue, &condition, portMAX_DELAY)) {
-            printf("Nexa condition %i\n", condition);
+            //printf("Nexa condition %i\n", condition);
+            switch (decode_state) {
+                case WaitSyncCondition:
+                    if (condition == SyncConditionDetected) {
+                        decode_state = WaitLogicalBitStart;
+                    }
+                    else {
+                        printf("Unexpected condition %i, was expecting sync\n", condition);
+                    }
+                    break;
+                case WaitLogicalBitStart:
+                    if (condition == MarkConditionDetected) {
+                        /* Detected start of logical "1" bit. Expect a space condition after that */
+                        decode_state = WaitSpaceCondition;
+                    }
+                    else if (condition == SpaceConditionDetected) {
+                        /* Detected start of logical "0" bit. Expect a mark condition after that */
+                        decode_state = WaitMarkCondition;
+                    }
+                    else if (condition == PauseConditionDetected) {
+                        printf("End of telegram!\n");
+                        decode_state = WaitSyncCondition;
+                    }
+                    else {
+                        printf("Unexpected condition %i, was expecting mark, space or pause\n", condition);
+                        // Skip queue until sync condition is detected, then go to state WaitLogicalBitStart
+                        queue_skip_until_sync();
+                        decode_state = WaitLogicalBitStart;
+                    }
+                    break;
+                case WaitSpaceCondition:
+                    if (condition == SpaceConditionDetected) {
+                        printf("Logical 1\n");
+                        decode_state = WaitLogicalBitStart;
+                    }
+                    else {
+                        printf("Unexpected condition %i, was expecting %i\n", condition, SpaceConditionDetected);
+                        queue_skip_until_sync();
+                        decode_state = WaitLogicalBitStart;
+                    }
+                    
+                    break;
+                case WaitMarkCondition: 
+                    if (condition == MarkConditionDetected) {
+                        printf("Logical 0\n");
+                        decode_state = WaitLogicalBitStart;
+                    }
+                    else {
+                        printf("Unexpected condition %i, was expecting %i\n", condition, MarkConditionDetected);
+                        queue_skip_until_sync();
+                        decode_state = WaitLogicalBitStart;
+                    }
+                    break;
+                case ProtocolError:
+                    printf("Protocol error\n");
+                    decode_state = WaitSyncCondition;
+                    break;
+            }
+
         }
     }
 }
