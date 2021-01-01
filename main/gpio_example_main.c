@@ -58,8 +58,8 @@ static int64_t bit_detector_timestampLoHi;
 static int64_t bit_detector_timestampHiLo;
 
 static bool IRAM_ATTR nexa_allowable_time(int64_t now, int64_t compare_timestamp, int64_t target) {
-    int64_t min = target - 25;
-    int64_t max = target + 25;
+    int64_t min = target - 150; //FIXME! These limits need to be reviewed! Now a very large "window" is needed
+    int64_t max = target + 250;
 
     if ((now - compare_timestamp) < min) {
         return false;
@@ -203,7 +203,7 @@ static void gpio_task_example(void* arg)
                         recv_frame = 0;
                     }
                     else {
-                        printf("Unexpected condition %i, was expecting sync\n", condition);
+                        //printf("Unexpected condition %i, was expecting sync\n", condition);
                     }
                     break;
                 case WaitLogicalBitStart:
@@ -222,7 +222,7 @@ static void gpio_task_example(void* arg)
                         decode_state = WaitSyncCondition;
                     }
                     else {
-                        printf("Unexpected condition %i, was expecting mark, space or pause\n", condition);
+                        //printf("Unexpected condition %i, was expecting mark, space or pause\n", condition);
                         // Skip queue until sync condition is detected, then go to state WaitLogicalBitStart
                         queue_skip_until_sync();
                         decode_state = WaitLogicalBitStart;
@@ -232,12 +232,12 @@ static void gpio_task_example(void* arg)
                     break;
                 case WaitSpaceCondition:
                     if (condition == SpaceConditionDetected) {
-                        printf("Logical 1\n");
+                        //printf("Logical 1\n");
                         decode_state = WaitLogicalBitStart;
                         recv_frame |= 1 << bit_cnt++;
                     }
                     else {
-                        printf("Unexpected condition %i, was expecting %i\n", condition, SpaceConditionDetected);
+                        //printf("Unexpected condition %i, was expecting %i\n", condition, SpaceConditionDetected);
                         queue_skip_until_sync();
                         decode_state = WaitLogicalBitStart;
                         bit_cnt = 0;
@@ -247,12 +247,12 @@ static void gpio_task_example(void* arg)
                     break;
                 case WaitMarkCondition: 
                     if (condition == MarkConditionDetected) {
-                        printf("Logical 0\n");
+                        //printf("Logical 0\n");
                         decode_state = WaitLogicalBitStart;
                         bit_cnt++;
                     }
                     else {
-                        printf("Unexpected condition %i, was expecting %i\n", condition, MarkConditionDetected);
+                        //printf("Unexpected condition %i, was expecting %i\n", condition, MarkConditionDetected);
                         queue_skip_until_sync();
                         decode_state = WaitLogicalBitStart;
                         bit_cnt = 0;
