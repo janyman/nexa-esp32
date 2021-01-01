@@ -43,6 +43,15 @@
 #define ESP_INTR_FLAG_DEFAULT 0
 
 static xQueueHandle radio_evt_queue = NULL;
+static xQueueHandle recv_frame_queue = NULL;
+
+struct nexa_payload {
+    uint32_t id : 26;
+    bool group : 1;
+    bool state : 1;
+    uint8_t channel : 2;
+    uint8_t unit : 2;
+};
 
 static enum nexa_bit_detector_state bit_detector_state = WaitBitStart;
 static int64_t bit_detector_timestampLoHi;
@@ -179,19 +188,26 @@ static void queue_skip_until_sync(void) {
 static void gpio_task_example(void* arg)
 {
     enum nexa_condition condition;
+    uint32_t recv_frame = 0;
+    int bit_cnt = 0;
     for(;;) {
         if(xQueueReceive(radio_evt_queue, &condition, portMAX_DELAY)) {
             //printf("Nexa condition %i\n", condition);
             switch (decode_state) {
                 case WaitSyncCondition:
+                    
                     if (condition == SyncConditionDetected) {
+                        
                         decode_state = WaitLogicalBitStart;
+                        bit_cnt = 0;
+                        recv_frame = 0;
                     }
                     else {
                         printf("Unexpected condition %i, was expecting sync\n", condition);
                     }
                     break;
                 case WaitLogicalBitStart:
+                    
                     if (condition == MarkConditionDetected) {
                         /* Detected start of logical "1" bit. Expect a space condition after that */
                         decode_state = WaitSpaceCondition;
@@ -201,7 +217,8 @@ static void gpio_task_example(void* arg)
                         decode_state = WaitMarkCondition;
                     }
                     else if (condition == PauseConditionDetected) {
-                        printf("End of telegram!\n");
+                        printf("End of telegram, recv_frame %x!\n", recv_frame);
+                        xQueueSend(recv_frame_queue, &recv_frame, portMAX_DELAY);
                         decode_state = WaitSyncCondition;
                     }
                     else {
@@ -209,17 +226,22 @@ static void gpio_task_example(void* arg)
                         // Skip queue until sync condition is detected, then go to state WaitLogicalBitStart
                         queue_skip_until_sync();
                         decode_state = WaitLogicalBitStart;
+                        bit_cnt = 0;
+                        recv_frame = 0;
                     }
                     break;
                 case WaitSpaceCondition:
                     if (condition == SpaceConditionDetected) {
                         printf("Logical 1\n");
                         decode_state = WaitLogicalBitStart;
+                        recv_frame |= 1 << bit_cnt++;
                     }
                     else {
                         printf("Unexpected condition %i, was expecting %i\n", condition, SpaceConditionDetected);
                         queue_skip_until_sync();
                         decode_state = WaitLogicalBitStart;
+                        bit_cnt = 0;
+                        recv_frame = 0;
                     }
                     
                     break;
@@ -227,11 +249,14 @@ static void gpio_task_example(void* arg)
                     if (condition == MarkConditionDetected) {
                         printf("Logical 0\n");
                         decode_state = WaitLogicalBitStart;
+                        bit_cnt++;
                     }
                     else {
                         printf("Unexpected condition %i, was expecting %i\n", condition, MarkConditionDetected);
                         queue_skip_until_sync();
                         decode_state = WaitLogicalBitStart;
+                        bit_cnt = 0;
+                        recv_frame = 0;
                     }
                     break;
                 case ProtocolError:
@@ -380,6 +405,7 @@ void app_main()
 
     //create a queue to handle gpio event from isr
     radio_evt_queue = xQueueCreate(100, sizeof(enum nexa_condition));
+    recv_frame_queue = xQueueCreate(100, sizeof(uint32_t));
     //start gpio task. Note that this task should be set to *low priority* since GPIO ISR will post, and we cannot allow context switch to happen when isr should be serviced... 
     xTaskCreate(gpio_task_example, "gpio_task_example", 2048, NULL, 0, NULL);
 
@@ -446,7 +472,14 @@ void app_main()
         transmit_pause();
 
         vTaskDelay(10000 / portTICK_RATE_MS);
-        
+
+        struct nexa_payload frame;
+        while (xQueueReceive(recv_frame_queue, &frame, 0)) {
+            //printf("Received frame: %x\n", frame);
+
+            //printf("id: %x\n", (frame & 0x3FFFFFF) >> 6);
+            printf("id: 0x%x group: %hhi state: %hhi unit %hhi channel %hhi\n", frame.id, frame.group, frame.state, frame.unit, frame.channel);
+        }
     }
 }
 
