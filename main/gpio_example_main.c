@@ -1,11 +1,13 @@
-/* GPIO Example
-
-   This example code is in the Public Domain (or CC0 licensed, at your option.)
-
-   Unless required by applicable law or agreed to in writing, this
-   software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
-   CONDITIONS OF ANY KIND, either express or implied.
-*/
+/*
+ * System Nexa transmitter / receiver test
+ * 
+ * Connect the radio hardware as follows:
+ * 
+ * GPIO5 (UEXT pin 10): RF transmitter data pin
+ * GPIO14 (UEXT pin 9): RF receiver data pin
+ * 
+ * For testing, simply use a wire for transmitter->receiver "loop back"
+ */
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -18,26 +20,8 @@
 
 #include "nexa_receiver.h"
 
-/**
- * Brief:
- * This test code shows how to configure gpio and how to use gpio interrupt.
- *
- * GPIO status:
- * GPIO18: output
- * GPIO19: output
- * GPIO4:  input, pulled up, interrupt from rising edge and falling edge
- * GPIO5:  input, pulled up, interrupt from rising edge.
- *
- * Test:
- * Connect GPIO18 with GPIO4
- * Connect GPIO19 with GPIO5
- * Generate pulses on GPIO18/19, that triggers interrupt on GPIO4/5
- *
- */
-
 #define GPIO_OUTPUT_IO_0    5 //UEXT pin 10
-#define GPIO_OUTPUT_IO_1    2 //UEXT pin 8
-#define GPIO_OUTPUT_PIN_SEL  ( (1ULL<<GPIO_OUTPUT_IO_0) | (1ULL <<GPIO_OUTPUT_IO_1) )
+#define GPIO_OUTPUT_PIN_SEL  ( (1ULL<<GPIO_OUTPUT_IO_0) )
 #define GPIO_INPUT_IO_0     14 //UEXT pin 9
 #define GPIO_INPUT_PIN_SEL  ( 1ULL<<GPIO_INPUT_IO_0 )
 #define ESP_INTR_FLAG_DEFAULT 0
@@ -185,7 +169,7 @@ static void queue_skip_until_sync(void) {
     }
 }
 
-static void gpio_task_example(void* arg)
+static void radio_event_processor(void* arg)
 {
     enum nexa_condition condition;
     uint32_t recv_frame = 0;
@@ -269,9 +253,8 @@ static void gpio_task_example(void* arg)
     }
 }
 
-static void gpio_set(bool state) {
+static void rf_set_transmitter(bool state) {
     gpio_set_level(GPIO_OUTPUT_IO_0, state);
-    gpio_set_level(GPIO_OUTPUT_IO_1, state);
 }
 
 static void busy_wait(int usec) {
@@ -327,17 +310,17 @@ T = 250 us
 
 static void transmit_sync(void) {
     //SYNC
-    gpio_set(1);
+    rf_set_transmitter(1);
     busy_wait(T);
-    gpio_set(0);
+    rf_set_transmitter(0);
     busy_wait(10*T);
 }
 
 static void transmit_phy_bit(uint8_t phy_bit_value) {
     
-    gpio_set(1);
+    rf_set_transmitter(1);
     busy_wait(T);
-    gpio_set(0);
+    rf_set_transmitter(0);
     if (phy_bit_value) {
         // "1" bit
         busy_wait(T);
@@ -350,9 +333,9 @@ static void transmit_phy_bit(uint8_t phy_bit_value) {
 
 static void transmit_pause(void) {
     //PAUSE
-    gpio_set(1);
+    rf_set_transmitter(1);
     busy_wait(T);
-    gpio_set(0);
+    rf_set_transmitter(0);
     busy_wait(40*T);
 }
 
@@ -407,15 +390,12 @@ void app_main()
     radio_evt_queue = xQueueCreate(100, sizeof(enum nexa_condition));
     recv_frame_queue = xQueueCreate(100, sizeof(uint32_t));
     //start gpio task. Note that this task should be set to *low priority* since GPIO ISR will post, and we cannot allow context switch to happen when isr should be serviced... 
-    xTaskCreate(gpio_task_example, "gpio_task_example", 2048, NULL, 0, NULL);
+    xTaskCreate(radio_event_processor, "gpio_task_example", 2048, NULL, 0, NULL);
 
     //install gpio isr service
     gpio_install_isr_service(ESP_INTR_FLAG_DEFAULT);
     //hook isr handler for specific gpio pin
     gpio_isr_handler_add(GPIO_INPUT_IO_0, gpio_isr_handler, (void*) GPIO_INPUT_IO_0);
-
-    //remove isr handler for gpio number.
-    //gpio_isr_handler_remove(GPIO_INPUT_IO_0);
 
     int cnt = 0;
     while(1) {
@@ -475,9 +455,6 @@ void app_main()
 
         struct nexa_payload frame;
         while (xQueueReceive(recv_frame_queue, &frame, 0)) {
-            //printf("Received frame: %x\n", frame);
-
-            //printf("id: %x\n", (frame & 0x3FFFFFF) >> 6);
             printf("id: 0x%x group: %hhi state: %hhi unit %hhi channel %hhi\n", frame.id, frame.group, frame.state, frame.unit, frame.channel);
         }
     }
