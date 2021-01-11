@@ -1,15 +1,16 @@
-# Example: GPIO
+# System Nexa support for ESP32
 
-This test code shows how to configure gpio and how to use gpio interrupt.
+This repository is (or someday will be) an esp-idf component that can be used in ESP32 projects. It aims for supporting the 433 Mhz band System Nexa wireless home automation products.
 
-## GPIO functions:
+## Hardware
 
- * GPIO18: output
- * GPIO19: output
- * GPIO4:  input, pulled up, interrupt from rising edge and falling edge
- * GPIO5:  input, pulled up, interrupt from rising edge.
+The program is developed on an Olimex ESP32-POE board, but will work on any ESP32 board with proper modifications. 
 
-## Test:
- * Connect GPIO18 with GPIO4
- * Connect GPIO19 with GPIO5
- * Generate pulses on GPIO18/19, that triggers interrupt on GPIO4/5
+The 433Mhz radio transciever used is an inexpensive pair of transmitter and receiver, that seems to be commonly available on chinese webshops. The modulation techique used is "ON/OFF keying".
+
+## Usage 
+
+Connect the radio hardware as follows:
+
+* GPIO5 (UEXT pin 10): RF transmitter data pin
+* GPIO14 (UEXT pin 9): RF receiver data pin
