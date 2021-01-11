@@ -6,7 +6,9 @@ This repository is (or someday will be) an esp-idf component that can be used in
 
 The program is developed on an Olimex ESP32-POE board, but will work on any ESP32 board with proper modifications. 
 
-The 433Mhz radio transciever used is an inexpensive pair of transmitter and receiver, that seems to be commonly available on chinese webshops. The modulation techique used is "ON/OFF keying".
+The 433Mhz radio hardware used is an inexpensive pair of transmitter and receiver, that seems to be commonly available on chinese webshops. I believe any 433 Mhz ISM band radio transciever that can do "ON/OFF keying" can work with this project.
+
+The radio hardware I use looks a lot like the ones descibed in [http://romanblack.com/RF/cheapRFmodules.htm] 
 
 ## Usage 
 
