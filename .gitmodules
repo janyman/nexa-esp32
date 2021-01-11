@@ -1,3 +1,0 @@
-[submodule "components/nexa-esp32"]
-	path = components/nexa-esp32
-	url = git@github.com:janyman/nexa-esp32.git
