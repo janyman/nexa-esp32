@@ -29,18 +29,6 @@
 static xQueueHandle radio_evt_queue = NULL;
 static xQueueHandle recv_frame_queue = NULL;
 
-struct nexa_payload {
-    uint32_t id : 26;
-    bool group : 1;
-    bool state : 1;
-    uint8_t channel : 2;
-    uint8_t unit : 2;
-};
-
-static enum nexa_bit_detector_state bit_detector_state = WaitBitStart;
-static int64_t bit_detector_timestampLoHi;
-static int64_t bit_detector_timestampHiLo;
-
 static bool IRAM_ATTR nexa_allowable_time(int64_t now, int64_t compare_timestamp, int64_t target) {
     int64_t min = target - 150; //FIXME! These limits need to be reviewed! Now a very large "window" is needed
     int64_t max = target + 250;
@@ -58,6 +46,10 @@ static const int T = 250;   // usec
 
 static void IRAM_ATTR gpio_isr_handler(void* arg)
 {
+    static enum nexa_bit_detector_state bit_detector_state = WaitBitStart;
+    static int64_t bit_detector_timestampLoHi;
+    static int64_t bit_detector_timestampHiLo;
+
     static bool prev_level;
 
     uint32_t gpio_num = (uint32_t) arg;
@@ -158,8 +150,6 @@ static void IRAM_ATTR gpio_isr_handler(void* arg)
     prev_level = level;
 }
 
-static enum nexa_telegram_detector_state decode_state = WaitSyncCondition;
-
 static void queue_skip_until_sync(void) {
     enum nexa_condition condition;
     while (xQueueReceive(radio_evt_queue, &condition, portMAX_DELAY)) {
@@ -172,6 +162,8 @@ static void queue_skip_until_sync(void) {
 static void radio_event_processor(void* arg)
 {
     enum nexa_condition condition;
+    enum nexa_telegram_detector_state decode_state = WaitSyncCondition;
+    
     uint32_t recv_frame = 0;
     int bit_cnt = 0;
     for(;;) {
