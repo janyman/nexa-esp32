@@ -1,3 +1,5 @@
+#include <stdint.h>
+
 /** These are the states for the "low-level" physical bit detector state machine */
 enum nexa_bit_detector_state {
     WaitBitStart,
@@ -33,3 +35,5 @@ struct nexa_payload {
     uint8_t channel : 2;
     uint8_t unit : 2;
 };
+
+void nexa_rx_init(gpio_num_t rx_gpio_pin, xQueueHandle rx_frame_queue);
