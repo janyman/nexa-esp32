@@ -23,18 +23,17 @@
 
 void app_main()
 {
-    
-    
+    /* Setup a queue where any received Nexa command frames will be posted to */
     xQueueHandle recv_frame_queue = xQueueCreate(100, sizeof(uint32_t));
+
+    //UEXT pin 9 is GPIO_NUM_14
+    nexa_rx_init(GPIO_NUM_14, recv_frame_queue);
     int cnt = 0;
     while(1) {
         printf("cnt: %d\n", cnt++);
 
-        
-        vTaskDelay(10000 / portTICK_RATE_MS);
-
         struct nexa_payload frame;
-        while (xQueueReceive(recv_frame_queue, &frame, 0)) {
+        while (xQueueReceive(recv_frame_queue, &frame, 10000 / portTICK_RATE_MS)) {
             printf("id: 0x%x group: %hhi state: %hhi unit %hhi channel %hhi\n", frame.id, frame.group, frame.state, frame.unit, frame.channel);
         }
     }
