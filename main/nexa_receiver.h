@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include "nexa_common.h"
 
 /** These are the states for the "low-level" physical bit detector state machine */
 enum nexa_bit_detector_state {
@@ -26,14 +27,6 @@ enum nexa_telegram_detector_state {
     WaitSpaceCondition,
     ProtocolError,
     WaitMarkCondition,
-};
-
-struct nexa_payload {
-    uint32_t id : 26;
-    bool group : 1;
-    bool state : 1;
-    uint8_t channel : 2;
-    uint8_t unit : 2;
 };
 
 void nexa_rx_init(gpio_num_t rx_gpio_pin, xQueueHandle rx_frame_queue);

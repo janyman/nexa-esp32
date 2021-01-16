@@ -19,6 +19,7 @@
 #include "esp_timer.h"
 
 #include "nexa_receiver.h"
+#include "nexa_transmitter.h"
 
 
 void app_main()
@@ -28,6 +29,7 @@ void app_main()
 
     //UEXT pin 9 is GPIO_NUM_14
     nexa_rx_init(GPIO_NUM_14, recv_frame_queue);
+    transmit_init(GPIO_NUM_5);
     int cnt = 0;
     while(1) {
         printf("cnt: %d\n", cnt++);
@@ -36,6 +38,9 @@ void app_main()
         while (xQueueReceive(recv_frame_queue, &frame, 10000 / portTICK_RATE_MS)) {
             printf("id: 0x%x group: %hhi state: %hhi unit %hhi channel %hhi\n", frame.id, frame.group, frame.state, frame.unit, frame.channel);
         }
+
+        //Arbitrary chosen id for this ESP32: 0x200a55a
+        transmit_frame(0x200a55a, cnt % 2); 
     }
 }
 

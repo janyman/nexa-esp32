@@ -14,7 +14,6 @@
 
 
 static xQueueHandle radio_evt_queue = NULL;
-static xQueueHandle recv_frame_queue = NULL;
 
 static bool IRAM_ATTR nexa_allowable_time(int64_t now, int64_t compare_timestamp, int64_t target) {
     int64_t min = target - 150; //FIXME! These limits need to be reviewed! Now a very large "window" is needed
@@ -143,6 +142,8 @@ static void queue_skip_until_sync(void) {
         }
     }
 }
+
+static xQueueHandle recv_frame_queue = NULL;
 
 static void radio_event_processor(void* arg)
 {

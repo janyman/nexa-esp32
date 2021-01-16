@@ -193,3 +193,59 @@ void transmit_test(void)
 
     transmit_pause();
 }
+
+void transmit_frame(uint32_t id, bool state)
+{
+    /* Packetformat
+        Every packet consists of a sync bit followed by 26 + 2 + 4 (total 32 logical data part bits) and is ended by a pause bit.
+
+        S HHHH HHHH HHHH HHHH HHHH HHHH HHGO CCEE P
+
+        S = Sync bit.
+        H = The first 26 bits are transmitter unique codes, and it is this code that the reciever "learns" to recognize.
+        G = Group code. Set to 0 for on, 1 for off.
+        O = On/Off bit. Set to 0 for on, 1 for off.
+        C = Channel bits. Proove/Anslut = 00, Nexa = 11.
+        E = Unit bits. Device to be turned on or off.
+        Proove/Anslut Unit #1 = 00, #2 = 01, #3 = 10.
+        Nexa Unit #1 = 11, #2 = 10, #3 = 01.
+        P = Pause bit.
+
+        For every button press, N identical packets are sent. For Proove/Anslut N is six, and for Nexa it is five.
+        */
+
+    /* 26 bit station id...
+        2^25 (base 10) = 10000000000000000000000000 (base 2) = 0x2000000 (base 16) */
+    const uint32_t station_id = id;
+
+    transmit_sync();
+
+    /* Transmit 26 bits of station ID */
+    for (int i = 0; i < 26; i++)
+    {
+        if (station_id & (1 << i))
+        {
+            transmit_logical_bit(1);
+        }
+        else
+        {
+            transmit_logical_bit(0);
+        }
+    }
+
+    /* Transmit group code (let's try 0) */
+    transmit_logical_bit(0);
+
+    /* Transmit the desired state bit */
+    transmit_logical_bit(state);
+
+    /* Transmit channel bits, '11' for Nexa */
+    transmit_logical_bit(1);
+    transmit_logical_bit(1);
+
+    /* Transmit unit bits: Nexa Unit #1 = 11, #2 = 10, #3 = 01. */
+    transmit_logical_bit(1);
+    transmit_logical_bit(1);
+
+    transmit_pause();
+}
